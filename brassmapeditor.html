@@ -82,15 +82,12 @@ Tools: &nbsp;
   <option value="medium"> Medium</option>
   <option value="difficult"> Difficult</option>
 </select>
-Display: 
-<input type="checkbox" title="Display background" id="displaybackgroundcheck"> Background
-<input type="checkbox" title="Display lights" id="displaylightscheck" checked> Lights
+
 <!-- <input type="checkbox" title="Display initial points" id="displayinitialpointscheck" checked> Initial points -->
 </font>
 </div>
 <div id="ExploreTools" style="display: none">
-<input type="checkbox" title="Time" id="displaytimecheck"/>Time
-<input type="checkbox" title="Lighting" id="displaylightingcheck"/>Lighting
+  <font size="2">
 <input type="checkbox" title="Success rate" id="displaysuccessrate"/>Succes Rate &lt; 
 <input type="text" id="succesthreshold" size='4' value='1'/>
 
@@ -100,7 +97,14 @@ Display:
 <select id="configSelect" name="configSelect">
   <option value="all">all</option>
 </select>
-
+</font>
+</div>
+<div>
+<font size="2">
+Display: 
+<input type="checkbox" title="Display background" id="displaybackgroundcheck"> Background
+<input type="checkbox" title="Display lights" id="displaylightscheck" checked> Lights
+</font>
 </div>
 <canvas id="imageCanvas"></canvas>
 <script>
@@ -335,6 +339,50 @@ function removeConnectionAt(px, py) {
   connections = newconns;
 }
 
+var current_info = null;
+
+
+function processExportClick(px, py) {
+  for (var i=0; i < connections.length; i++) {
+    if (coordsOnLine(px, py, getCoords(connections[i].from).x,
+                             getCoords(connections[i].from).y,
+                             getCoords(connections[i].to).x,
+                             getCoords(connections[i].to).y )) {
+      current_info = {maxmean : -1, maxdev: 1, minmean: -1, mindev : -1, timemean : -1, timedev: -1, x : px, y : py}
+      var length = minilluminance.length;
+      if (length < maxilluminance.length) length = maxilluminance.length;
+      if (length < timing.length) length = timing.length;
+
+
+      for (var j=0; j < minilluminance.length; j++) {
+        if (j < minilluminance.length) {
+          n = minilluminance[j];
+          if ((n.from == connections[i].from && n.to == connections[i].to) || (n.from == connections[i].to && n.from==connections[i].to)) {
+            current_info.minmean = n.mean
+            current_info.mindev = n.stdev
+          }
+        }
+        if (j < maxilluminance.length) {
+          n = maxilluminance[j]
+          if ((n.from == connections[i].from && n.to == connections[i].to) || (n.from == connections[i].to && n.from==connections[i].to)) {
+            current_info.maxmean = n.mean;
+            current_info.maxdev = n.stdev;
+          }
+        }
+        if (j < timing[getConfig()].length) {
+          n = timing[getConfig()][j];
+          if ((n.from == connections[i].from && n.to == connections[i].to) || (n.from == connections[i].to && n.from==connections[i].to)) {
+            current_info.timemean = n.mean;
+            current_info.timedev = n.stdev;
+          }
+        }
+      }
+      return;
+    }
+  }
+  current_info = null;
+}
+
 
 function removeObstaclesBetweenLocations (l1, l2){
   var auxobstacles=[];
@@ -477,6 +525,9 @@ function moveReporter(e){
 
 // Handles mouse click events
 function clickReporter(e){
+  if (mode() == "explore") {
+    processExportClick(rx, ry);
+  }
   if (mode() != "edit") return;
   if (tool==0){ // Creating waypoints 
     if (!e.altKey){
@@ -1017,8 +1068,7 @@ function render(){
     if (displayhitrate.checked)
       drawHitRate();
     if (displaysuccessrate.checked) drawSuccessRate();
-    if (displaylightingcheck.checked) drawLightingResults();
-    if (displaytimecheck.checked) drawTiming();
+    drawData()
   }
 //  if (displayinitialpointscheck.checked)
 //    drawInitialPoints();
@@ -1165,8 +1215,7 @@ var failure_img = new Image;
 failure_img.src = "icons/cross.png";
 
 function drawHitRate() {
-  s = document.getElementById("configSelect");
-  var config = s.options[s.selectedIndex].value;
+  var config = getConfig()
   var details = hitrate[config];
   if (!details) return;
   threshold = Number(document.getElementById("hitaratethreshold").value.trim())
@@ -1184,18 +1233,25 @@ function drawHitRate() {
       else 
         hittingloc.y = hittingloc.y - 20
       ctx.drawImage(collision_img, hittingloc.x - 8, hittingloc.y - 8);
+      ctx.save();
       ctx.fillStyle = "rgb(0, 0, 0)";
       ctx.font="10px Georgia";
       ctx.textBaseline = 'middle'
       ctx.textAlign = 'center'
-      ctx.fillText(hr.prob.toFixed(2), hittingloc.x - 8, hittingloc.y - 8);
+      ctx.fillText(hr.prob.toFixed(2), hittingloc.x, hittingloc.y - 8);
+      ctx.restore();
     }
   }
 }
 
+function getConfig() {
+  s = document.getElementById("configSelect");
+  var config = s.options[s.selectedIndex].value;
+  return config;
+}
+
 function drawSuccessRate() {
-    s = document.getElementById("configSelect");
-    var config = s.options[s.selectedIndex].value;
+    var config = getConfig()
     var details = successrate[config];
     if (!details) return;
     threshold = Number(document.getElementById("succesthreshold").value.trim())
@@ -1209,18 +1265,69 @@ function drawSuccessRate() {
           hittingloc.x = hittingloc.x + 20
         else 
           hittingloc.y = hittingloc.y + 20
+        ctx.save();
         ctx.drawImage(failure_img, hittingloc.x - 8, hittingloc.y - 8);
-              ctx.fillStyle = "rgb(0, 0, 0)";
-      ctx.font="10px Georgia";
-      ctx.textBaseline = 'middle'
-      ctx.textAlign = 'center'
-      ctx.fillText(sr.prob.toFixed(2), hittingloc.x, hittingloc.y - 8);
+        ctx.fillStyle = "rgb(0, 0, 0)";
+        ctx.font="10px Georgia";
+        ctx.textBaseline = 'middle'
+        ctx.textAlign = 'center'
+        ctx.fillText(sr.prob.toFixed(2), hittingloc.x, hittingloc.y - 8);
+        ctx.restore();
       }
     }
 }
 
-function drawLightingResults() {
 
+function drawData() {
+  if (current_info == null) return;
+  ctx.save();
+  ctx.fillStyle = "rgb(255,255,255";
+  ctx.strokeStyle = "rgb(0,0,0)";
+  ctx.fillRect(current_info.x - 50, current_info.y -25, 100, 45);
+  ctx.strokeRect(current_info.x - 50, current_info.y - 25, 100, 45);
+  ctx.fillStyle="rgb(0,0,0)";
+  ctx.font="10px Georgia";
+  ctx.fillText("Illuminance:", current_info.x - 48, current_info.y - 14);
+  ctx.fillText("  Max: " + current_info.maxmean.toFixed(0) + "+- " + current_info.maxdev.toFixed(0), current_info.x - 48, current_info.y-4);
+  ctx.fillText("  Min: " + current_info.minmean.toFixed(0) + "+- " + current_info.mindev.toFixed(0), current_info.x - 48, current_info.y + 6);
+  ctx.fillText("Time: " + current_info.timemean.toFixed(0) + "+- " + current_info.timedev.toFixed(0), current_info.x - 48, current_info.y + 16);
+  ctx.restore();
+}
+
+function drawLightingResults() {
+  var length = maxilluminance.length
+  if (minilluminance > length)
+    length=minilluminance.length
+  for (var i = 0; i < length; i++) {
+    if (i < minilluminance.length) {
+      min = minilluminance[i]
+      from = getCoords(min.from)
+      to = getCoords(min.to)
+      var loc = {x : Math.floor((from.x + to.x)/2), y : Math.floor((from.y + to.y)/2)}
+      if (isHorizontal(from.x, from.y, to.x, to.y)) 
+          loc.x = loc.x + 40
+        else 
+          loc.y = loc.y + 40
+      ctx.font="10px Georgia";
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'
+      ctx.fillText("Min: " + min.mean.toFixed(2), loc.x, loc.y - 8);
+    }
+    if (i < maxilluminance.length) {
+      min = maxilluminance[i]
+      from = getCoords(min.from)
+      to = getCoords(min.to)
+      var loc = {x : Math.floor((from.x + to.x)/2), y : Math.floor((from.y + to.y)/2)}
+      if (isHorizontal(from.x, from.y, to.x, to.y)) 
+          loc.x = loc.x + 40
+        else 
+          loc.y = loc.y + 40
+      ctx.font="10px Georgia";
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'
+      ctx.fillText("Max: " + min.mean.toFixed(0), loc.x, loc.y+8);
+    }
+  }
 }
 
 function drawTiming() {
