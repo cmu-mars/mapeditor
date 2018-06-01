@@ -45,6 +45,14 @@ Using the editor:
 </td>
 <td>
   <center>
+    <select id="modeSelect" onchange="changeMode()">
+      <option value="edit">Edit</option>
+      <option value="explore">Explore</option>
+    </select>
+  </center>
+</td>
+<td>
+  <center>
     <font size="2">
     <a href="instructions.html" target="_blank">Help</a>
   </font>
@@ -53,6 +61,7 @@ Using the editor:
 
 </tr>
 </table>
+<div id="EditTools">
 <font size="2">
 Tools: &nbsp; 
 <button type="button" title="Set origin of coordinates" id="setOriginTool" name="setOriginTool" onclick="setToolOrigin(this)"><img src="icons/origin.png" width=15 /></button>
@@ -78,6 +87,21 @@ Display:
 <input type="checkbox" title="Display lights" id="displaylightscheck" checked> Lights
 <!-- <input type="checkbox" title="Display initial points" id="displayinitialpointscheck" checked> Initial points -->
 </font>
+</div>
+<div id="ExploreTools" style="display: none">
+<input type="checkbox" title="Time" id="displaytimecheck"/>Time
+<input type="checkbox" title="Lighting" id="displaylightingcheck"/>Lighting
+<input type="checkbox" title="Success rate" id="displaysuccessrate"/>Succes Rate &lt; 
+<input type="text" id="succesthreshold" size='4' value='1'/>
+
+<input type="checkbox" title="Hit rate" id="displayhitrate"/>Hit Rate &gt;
+<input type="text" id="hitaratethreshold" size='4' value='0'/>
+| Configurations: 
+<select id="configSelect" name="configSelect">
+  <option value="all">all</option>
+</select>
+
+</div>
 <canvas id="imageCanvas"></canvas>
 <script>
 
@@ -128,10 +152,35 @@ var OBSTACLE_SIZE = 10 // 50/MPR; Size of obstacles
 var stations=[]; // charging stations
 var worldobstaclesx=[], worldobstaclesy=[]; // x,y obstacles 0.5x05m in world
 
+var hitrate={}
+var minilluminance=[]
+var maxilluminance=[]
+var timing={}
+var successrate={}
+
 // =============================================================================
 // Map querying (checking locations at x,y position, etc.)
 // =============================================================================
+function changeMode() {
+  var mode = document.getElementById("modeSelect").value;
+  var edit = document.getElementById("EditTools")
+  var explore = document.getElementById("ExploreTools")
+  if (mode == "explore") {
+    explore.style.display = "block"
+    edit.style.display="none"
+  }
+  else {
+    explore.style.display = "none"
+    edit.style.display="block"
 
+  }
+}
+
+function mode() {
+  return document.getElementById("modeSelect").value;
+}
+
+changeMode()
 
 
 function getLocationAt(x, y){
@@ -194,6 +243,15 @@ function originPixelsToMeters() {
 
 function originMetersToPixels(o) {
   return [Math.floor(o[0]*MPR), Math.floor(o[1]*MPR)]
+}
+
+
+function isVertical(x1, y1, x2, y2) {
+  return x1 - x2 < 20;
+}
+
+function isHorizontal(x1, y1, x2, y2) {
+  return y1 - y2 < 20;
 }
 
 
@@ -419,7 +477,7 @@ function moveReporter(e){
 
 // Handles mouse click events
 function clickReporter(e){
-  
+  if (mode() != "edit") return;
   if (tool==0){ // Creating waypoints 
     if (!e.altKey){
     locationsx.push(rx);
@@ -556,6 +614,7 @@ function clickReporter(e){
 
 // Keyboard handling
 function KeyPress(e) {
+  if (mode() != "edit") return;
   var evtobj = window.event? event : e
   if (evtobj.keyCode == 90 && evtobj.ctrlKey) { // undo (ctrl+z)
     if (tool==4){ // undo last wall
@@ -712,6 +771,11 @@ function loadJSON(file, callback) {
   lightsx = [];
   lightsy = [];
   lightids = [];
+  successrate = {}
+  hitrate = {}
+  minilluminance = []
+  maxilluminance = []
+  timing = {}
  }
 
  function parseMap (){
@@ -787,7 +851,113 @@ function loadJSON(file, callback) {
       }   
     }
     document.getElementById('mpr').value = MPR
-  }
+
+    // Get all the experimental attributes from the system
+    if (JSONmap["min_illuminance"]) {
+      for (var i=0; i<JSONmap["min_illuminance"].length; i++) {
+        var mi = JSONmap["min_illuminance"][i];
+        var f = mi["from"];
+        var t = mi["to"];
+        var m = mi["mean"]
+        var d = mi["stdev"]
+        minilluminance.push(mi)
+      }
+    }
+    if (JSONmap["max_illuminance"]) {
+      for (var i=0; i<JSONmap["max_illuminance"].length; i++) {
+        var mi = JSONmap["max_illuminance"][i];
+        var f = mi["from"];
+        var t = mi["to"];
+        var m = mi["mean"]
+        var d = mi["stdev"]
+        maxilluminance.push(mi)
+      }
+    }
+
+    if (JSONmap["hitrate"]) {
+      for (var i = 0; i < JSONmap["hitrate"].length; i++) {
+        var hr = JSONmap["hitrate"][i]
+        var all = {from : hr.from, to : hr.to, prob : hr.prob}
+        if (Object.keys(hitrate).includes("all")) {
+          hitrate.all.push(all)
+        }
+        else {
+          hitrate.all = [all];
+        }
+        for (var k = 0; k < Object.keys(hr).length; k++) {
+          var key = Object.keys(hr)[k];
+          if (key=="from" || key=="to" || key=="prob") continue;
+          c = {from : hr.from, to: hr.to, prob : hr[key].hitrate}
+          if (Object.keys(hitrate).includes(key)) {
+            hitrate[key].push(c)
+          }
+          else {
+            hitrate[key] = [c]
+          }
+
+        }
+      }
+    }
+    if (JSONmap["successrate"]) {
+      for (var i = 0; i < JSONmap["successrate"].length; i++) {
+        var hr = JSONmap["successrate"][i]
+        var all = {from : hr.from, to : hr.to, prob : hr.prob}
+        if (Object.keys(successrate).includes("all")) {
+          successrate.all.push(all)
+        }
+        else {
+          successrate.all = [all];
+        }
+        for (var k = 0; k < Object.keys(hr).length; k++) {
+          var key = Object.keys(hr)[k];
+          if (key=="from" || key=="to" || key=="prob") continue;
+          c = {from : hr.from, to: hr.to, prob : hr[key].successrate}
+          if (Object.keys(successrate).includes(key)) {
+            successrate[key].push(c)
+          }
+          else {
+            successrate[key] = [c]
+          }
+
+        }
+      }
+    }
+    if (JSONmap["time"]) {
+      for (var i = 0; i < JSONmap["time"].length; i++) {
+        var hr = JSONmap["time"][i]
+        var all = {from : hr.from, to : hr.to, mean : hr.mean, stdev: hr.stdev}
+        if (Object.keys(timing).includes("all")) {
+          timing.all.push(all)
+        }
+        else {
+          timing.all = [all];
+        }
+        for (var k = 0; k < Object.keys(hr).length; k++) {
+          var key = Object.keys(hr)[k];
+          if (key=="from" || key=="to" || key=="mean" || key =="stdev") continue;
+          c = {from : hr.from, to: hr.to, mean : hr[key].mean, stdev: hr[key].stdev}
+          if (Object.keys(timing).includes(key)) {
+            timing[key].push(c)
+          }
+          else {
+            timing[key] = [c]
+          }
+
+        }
+      }
+    }
+    configs = Object.keys(hitrate)
+    var select = document.getElementById("configSelect")
+    for (i = 0; i < configs.length; i++) {
+      if (configs[i] == "all") continue;
+      var opt = document.createElement('option');
+      opt.innerHTML = configs[i];
+      opt.value = configs[i];
+      select.appendChild(opt);
+    }
+
+  }    
+
 
 
 function importImage(e){
@@ -843,6 +1013,13 @@ function render(){
   drawWalls();
   if (displaylightscheck.checked)
     drawLights();
+  if (mode()=="explore") {
+    if (displayhitrate.checked)
+      drawHitRate();
+    if (displaysuccessrate.checked) drawSuccessRate();
+    if (displaylightingcheck.checked) drawLightingResults();
+    if (displaytimecheck.checked) drawTiming();
+  }
 //  if (displayinitialpointscheck.checked)
 //    drawInitialPoints();
 }
@@ -979,6 +1156,75 @@ function drawWorldObstacles(){
     ctx.fillStyle = "rgb(200, 0, 200)";
     ctx.fillRect(worldobstaclesx[i]-OBSTACLE_SIZE/2, worldobstaclesy[i]-OBSTACLE_SIZE/2, OBSTACLE_SIZE, OBSTACLE_SIZE);
   }
+}
+
+var collision_img = new Image;
+collision_img.src = "icons/collision.png";
+
+var failure_img = new Image;
+failure_img.src = "icons/cross.png";
+
+function drawHitRate() {
+  s = document.getElementById("configSelect");
+  var config = s.options[s.selectedIndex].value;
+  var details = hitrate[config];
+  if (!details) return;
+  threshold = Number(document.getElementById("hitaratethreshold").value.trim())
+
+  for (var i = 0; i < details.length; i++) {
+    var hr = details[i]
+    if (hr.prob > threshold) {
+
+      from = getCoords(hr.from)
+      to = getCoords(hr.to)
+      var hittingloc = {x : Math.floor((from.x + to.x)/2), y : Math.floor((from.y + to.y)/2)}
+    
+      if (isHorizontal(from.x, from.y, to.x, to.y)) 
+        hittingloc.x = hittingloc.x - 20
+      else 
+        hittingloc.y = hittingloc.y - 20
+      ctx.drawImage(collision_img, hittingloc.x - 8, hittingloc.y - 8);
+      ctx.fillStyle = "rgb(0, 0, 0)";
+      ctx.font="10px Georgia";
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'
+      ctx.fillText(hr.prob.toFixed(2), hittingloc.x - 8, hittingloc.y - 8);
+    }
+  }
+}
+
+function drawSuccessRate() {
+    s = document.getElementById("configSelect");
+    var config = s.options[s.selectedIndex].value;
+    var details = successrate[config];
+    if (!details) return;
+    threshold = Number(document.getElementById("succesthreshold").value.trim())
+    for (var i = 0; i < details.length; i++) {
+      var sr = details[i]
+      if (sr.prob < threshold) {
+        from = getCoords(sr.from)
+        to = getCoords(sr.to)
+        var hittingloc = {x : Math.floor((from.x + to.x)/2), y : Math.floor((from.y + to.y)/2)}
+        if (isHorizontal(from.x, from.y, to.x, to.y)) 
+          hittingloc.x = hittingloc.x + 20
+        else 
+          hittingloc.y = hittingloc.y + 20
+        ctx.drawImage(failure_img, hittingloc.x - 8, hittingloc.y - 8);
+              ctx.fillStyle = "rgb(0, 0, 0)";
+      ctx.font="10px Georgia";
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'
+      ctx.fillText(sr.prob.toFixed(2), hittingloc.x, hittingloc.y - 8);
+      }
+    }
+}
+
+function drawLightingResults() {
+
+}
+
+function drawTiming() {
+
 }
 
 </script>
